@@ -415,23 +415,57 @@ ggplot(gall_long_df, aes(x = Graze, y = GallPercent, fill = GallType)) +
   geom_col() + facet_grid(cols = vars(Fire)) + 
   ggtitle("Total Gall Counts by Fire, Graze Treatments and Gall Type")
 
-# Estimate gall abundance using a zero-inflated poisson regression model
-mod0 <- pscl::zeroinfl(GallCount ~ Fire * Graze + Plants_m2 + GallType, data = gall_long_df, dist = "poisson")
-mod1 <- pscl::zeroinfl(GallCount ~ Fire * Graze + Plants_m2, data = gall_long_df, dist = "poisson")
-mod2 <- pscl::zeroinfl(GallCount ~ Fire * Graze, data = gall_long_df, dist = "poisson")
-
-# TODO: plot models on top of empirical data
 
 
 ########
 ## -- Effects of Plant Community on Gall Abundance
 ########
 
+# Just look at plant density by Treatment
+plant_density <- gall_data %>%
+  select(c(Fire, Graze, Transect, PlantVol_cm3, PlantTotal, Plants_m2)) %>%
+  distinct()
 
+ggplot(plant_density, aes(x = Plants_m2, y = PlantTotal)) + 
+  geom_point(aes(col = Graze), size = 3, alpha = 0.5) + facet_wrap(vars(Fire)) + 
+  theme_bw() + ggtitle("Plant Total by Plant Density, Treatment")
+ggplot(plant_density, aes(x = Plants_m2, y = PlantTotal)) + 
+  geom_point(aes(col = Fire), size = 3, alpha = 0.5) + facet_wrap(vars(Graze)) + 
+  theme_bw() + ggtitle("Plant Total by Plant Density, Treatment")
+
+ggplot(plant_density, aes(x = Plants, y = Plants_m2)) + 
+  geom_point(aes(col = Fire), size = 3, alpha = 0.5) + 
+  facet_wrap(vars(Graze)) + 
+  theme_bw() + ggtitle("Plant Density by Plant Volume, Treatment")
+
+## -- Galls per Plant vs Plant Density
+galltype_plant <- gall_long_df %>%
+  group_by(GallType, Treatment) %>%
+  summarize(meanGallsper_m2 = mean(GallCount_m2),
+            sdGallsper_m2 = sd(GallCount_m2))
+
+# create a table of mean counts
+galltype_plant %>%
+  select(!sdGallsper_m2) %>%
+  mutate(meanGallsper_m2 = round(meanGallsper_m2, 2)) %>%
+  pivot_wider(names_from = "Treatment", values_from = "meanGallsper_m2") %>%
+  kbl(caption = "Mean Gall Count per Plant Density by Gall Type, Treatment",
+      col.names = c("Gall Type", rep(c("No Graze", "Spring", "Fall"), times = 2))) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c(" " = 1, "No Burn" = 3, "Burn" = 3)) %>%
+  save_kable("./viz/galltypeplantdens_table.png")
 
 ########
 ## -- Modeling Gall Abundance by Treatment, Gall Type
 ########
 
 
+# Estimate gall abundance using a zero-inflated poisson regression model
+mod0 <- pscl::zeroinfl(GallCount ~ Fire * Graze + Plants_m2 + GallType, data = gall_long_df, dist = "poisson")
+mod1 <- pscl::zeroinfl(GallCount ~ Fire * Graze + Plants_m2, data = gall_long_df, dist = "poisson")
+mod2 <- pscl::zeroinfl(GallCount ~ Fire * Graze, data = gall_long_df, dist = "poisson")
+
+lmtest(mod2, mod1, mod0)
+
+# TODO: plot models on top of empirical data
 
