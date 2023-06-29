@@ -245,9 +245,57 @@ colnames(TreatmentTotal) <- colnames(galltypes)
 galltypes <- bind_rows(galltypes, TreatmentTotal)
 
 galltypes %>%
-  kbl(caption = "Gall County by Gall Type, Treatment") %>%
-  kable_classic() %>%
-  save_kable("./viz/galltype_count_draft_table.png")
+  kbl(caption = "Gall Count by Gall Type, Treatment",
+      col.names = c("Gall Type", rep(c("No Graze", "Spring", "Fall"), times = 2), "Total")) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c(" " = 1, "No Burn" = 3, "Burn" = 3, " " = 1)) %>%
+  save_kable("./viz/galltype_count_table.png")
+
+# gall density by type and treatment 
+galldensity <- gall_long_df %>% 
+  group_by(GallType, Treatment) %>% 
+  summarize(GallDensity = sum(GallCountperVol)) %>%
+  pivot_wider(names_from = "Treatment", values_from = "GallDensity")
+
+galldensity_mat <- as.matrix(galldensity[,2:7])
+galldensity$TypeTotal <- rowSums(galldensity_mat)
+TreatmentTotal <- data.frame(t(c("TreatmentTotal", colSums(galldensity_mat), sum(rowSums(galldensity_mat)))))
+TreatmentTotal[,2:8] <- as.numeric(TreatmentTotal[,2:8])
+colnames(TreatmentTotal) <- colnames(galldensity)
+galldensity <- bind_rows(galldensity, TreatmentTotal)
+
+galldensity %>%
+  kbl(caption = "Gall Density (Galls per Plant Volume) by Gall Type, Treatment",
+      col.names = c("Gall Type", rep(c("No Graze", "Spring", "Fall"), times = 2), "Total")) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c(" " = 1, "No Burn" = 3, "Burn" = 3, " " = 1)) %>%
+  save_kable("./viz/galltype_density_table.png")
+
+# galltype by percent on plant, treatment
+gallpercents <- gall_long_df %>% 
+  group_by(GallType, Treatment) %>% 
+  summarize(PercentCt = mean(GallPercent)) %>%
+  mutate(PercentCt = round(PercentCt, 3)) %>%
+  pivot_wider(names_from = "Treatment", values_from = PercentCt)
+gallpercents %>%
+  kbl(caption = "Mean Proportion of Galls by Gall Type, Treatment",
+      col.names = c("Gall Type", rep(c("No Graze", "Spring", "Fall"), times = 2))) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c(" " = 1, "No Burn" = 3, "Burn" = 3)) %>%
+  save_kable("./viz/galltypepercentsbytrt_table.png")
+
+# galltype by percent density on plant, treatment
+gallpctdens <- gall_long_df %>% 
+  group_by(GallType, Treatment) %>% 
+  summarize(Density = mean(GallPercentperVol)) %>%
+  pivot_wider(names_from = "Treatment", values_from = Density)
+gallpctdens %>%
+  kbl(caption = "Mean Percentage Gall Density by Gall Type, Treatment",
+      col.names = c("Gall Type", rep(c("No Graze", "Spring", "Fall"), times = 2))) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c(" " = 1, "No Burn" = 3, "Burn" = 3)) %>%
+  save_kable("./viz/galltypepercentdensbytrt_table.png")
+
 
 # playing with colors and themes in plots
 # gall counts by treatment
@@ -328,6 +376,10 @@ cor(gall_data$PlantVol_cm3, gall_data$GallperVol, method = "kendall")
 cor(gall_data$PlantVol_cm3, gall_data$GallperVol, method = "spearman")
 # no correlation of note
 
+# summary table of galls by plant volume
+gall_data %>%
+  group_by(Fire, Graze) %>%
+  
 
 # visualize relationship by Treatment
 ggplot(gall_data, aes(x = PlantVol_cm3, y=GallTotal)) + 
