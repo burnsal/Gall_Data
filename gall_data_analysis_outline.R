@@ -19,6 +19,9 @@ library(lmtest) # model comparisons
 
 # load data
 gall_data <- readxl::read_xlsx("./data/Gall Data '23.xlsx", sheet = "Gall Data")
+density_df <- readxl::read_xlsx("./data/Gall Data '23.xlsx", sheet = "Summary gall data")
+insect_ids <- readxl::read_xlsx("./data/Gall Data '23.xlsx", sheet = "Insect identifications")
+lpi_data <- readxl::read_xlsx("./data/Gall Data '23.xlsx", sheet = "Line-Point Intercept Data")
 
 # overview df
 str(gall_data)
@@ -33,7 +36,7 @@ colnames(gall_data) <- gsub("\\)", "", colnames(gall_data))
 gall_data <- dplyr::mutate(gall_data,
                            PastureID = as.factor(PastureID),
                            Transectside = as.factor(Transectside),
-                           HostSpecies = as.factor(HostSpecies))
+                           HostSpecies = as.factor(ifelse(HostSpecies == "hybrid", "Hybrid", HostSpecies)))
 
 # add columns for each treatment type
 gall_data <- dplyr::mutate(gall_data,
@@ -47,7 +50,7 @@ gall_data <- dplyr::mutate(gall_data,
                                                          "NoGraze_Burn", "Spring_Burn", "Fall_Burn")))
 gall_data <- dplyr::relocate(gall_data, c(Fire, Graze, Treatment), .after = PastureID)
 
-# replace NA values
+# replace NA values with 0 in gall counts 
 gall_data <- dplyr::mutate_at(gall_data, vars(DaisyGall:Greenthorn), ~replace_na(., 0))
 
 # add col for volume of plant
@@ -64,7 +67,6 @@ gall_data <- gall_data %>%
   dplyr::mutate(GallperVol = GallTotal/PlantVol_cm3) # calculate galls by plant vol
   
 # add plant density
-density_df <- readxl::read_xlsx("./data/Gall Data '23.xlsx", sheet = "Summary gall data")
 density_df <- density_df %>%
   dplyr::select(c(PastureID, Transect, PlantTotal, TransectArea_m2)) %>%
   dplyr::mutate(Plants_m2 = PlantTotal / TransectArea_m2)
@@ -237,10 +239,15 @@ galltypes <- gall_long_df %>%
 
 galltypes_mat <- as.matrix(galltypes[,2:7])
 galltypes$TypeTotal <- rowSums(galltypes_mat)
-galltypes <- galltypes %>%
-  dplyr::bind_rows(summarise(.,
-                             across(where(is.numeric), sum),
-                             across(where(is.character), ~"TreatmentTotal")))
+TreatmentTotal <- data.frame(t(c("TreatmentTotal", colSums(galltypes_mat), sum(rowSums(galltypes_mat)))))
+TreatmentTotal[,2:8] <- as.numeric(TreatmentTotal[,2:8])
+colnames(TreatmentTotal) <- colnames(galltypes)
+galltypes <- bind_rows(galltypes, TreatmentTotal)
+
+galltypes %>%
+  kbl(caption = "Gall County by Gall Type, Treatment") %>%
+  kable_classic() %>%
+  save_kable("./viz/galltype_count_draft_table.png")
 
 # playing with colors and themes in plots
 # gall counts by treatment
