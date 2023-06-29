@@ -433,10 +433,14 @@ ggplot(plant_density, aes(x = Plants_m2, y = PlantTotal)) +
   geom_point(aes(col = Fire), size = 3, alpha = 0.5) + facet_wrap(vars(Graze)) + 
   theme_bw() + ggtitle("Plant Total by Plant Density, Treatment")
 
-ggplot(plant_density, aes(x = Plants, y = Plants_m2)) + 
+ggplot(plant_density, aes(x = Plants_m2, y = PlantVol_cm3)) + 
   geom_point(aes(col = Fire), size = 3, alpha = 0.5) + 
   facet_wrap(vars(Graze)) + 
-  theme_bw() + ggtitle("Plant Density by Plant Volume, Treatment")
+  theme_bw() + ggtitle("Plant Volume by Plant Density, Treatment")
+ggplot(plant_density, aes(x = Plants_m2, y = PlantVol_cm3)) + 
+  geom_point(aes(col = Graze), size = 3, alpha = 0.5) + 
+  facet_wrap(vars(Fire)) + 
+  theme_bw() + ggtitle("Plant Volume by Plant Density, Treatment")
 
 ## -- Galls per Plant vs Plant Density
 galltype_plant <- gall_long_df %>%
@@ -454,6 +458,8 @@ galltype_plant %>%
   kable_classic(full_width = F, html_font = "Cambria") %>%
   add_header_above(c(" " = 1, "No Burn" = 3, "Burn" = 3)) %>%
   save_kable("./viz/galltypeplantdens_table.png")
+
+
 
 ########
 ## -- Modeling Gall Abundance by Treatment, Gall Type
