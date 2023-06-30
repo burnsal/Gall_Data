@@ -459,6 +459,54 @@ galltype_plant %>%
   add_header_above(c(" " = 1, "No Burn" = 3, "Burn" = 3)) %>%
   save_kable("./viz/galltypeplantdens_table.png")
 
+ggplot(gall_data, aes(x = Plants_m2, y = GallTotal))+ 
+  geom_point(aes(col = Treatment), size = 3, alpha = 0.5) + 
+  theme_minimal() + ggtitle("Gall Counts per Plant by Transect Density, Treatment")
+ggplot(gall_data, aes(x = Plants_m2, y = GallTotal))+ 
+  geom_point(aes(col = as.factor(Transect)), size = 3, alpha = 0.5) + 
+  facet_wrap(vars(Treatment)) + 
+  theme_minimal() + ggtitle("Gall Counts per Plant by Transect, Transect Density, Treatment")
+ggplot(gall_long_df, aes(x = Plants_m2, y = GallCount))+ 
+  geom_point(aes(col = GallType), size = 4, alpha = 0.5) + 
+  scale_color_d3(palette = "category20") + 
+  facet_wrap(vars(Treatment)) + 
+  theme_bw() + ggtitle("Gall Counts per Plant by Transect Density, Treatment Gall Type")
+countplts <- list()
+densplts <- list()
+gallnames <- colnames(galls)
+for(i in 1:length(gallnames)){
+  # filter df by gall type
+  galldf <- dplyr::filter(gall_long_df, GallType == gallnames[i])
+  # plot counts
+  cp <- ggplot(galldf, aes(x = Plants_m2, y = GallPercent)) + 
+    geom_point(aes(col = Treatment), size = 4, alpha = 0.5) + 
+    scale_color_startrek() + 
+    ggtitle(paste0(gallnames[i], " per Plant Percentage by Transect Density, Treatment"))
+  # plot density
+  dp <- ggplot(galldf, aes(x = Plants_m2, y = GallPercentperVol)) + 
+    geom_point(aes(col = Treatment), size = 4, alpha = 0.5) + 
+    scale_color_startrek() + 
+    ggtitle(paste0(gallnames[i], " per Plant Percentage Density by Transect Density, Treatment"))
+  
+  countplts[[i]] <- cp
+  densplts[[i]] <- dp
+}
+
+pdf(file="./viz/galltypepercentageplotsbytransectdensityandtrt.pdf",
+    width=12, height=9)
+for(i in 1:length(gallnames)){
+  print(countplts[[i]])
+}
+dev.off()
+
+
+pdf(file="./viz/galltypedensitplotsbytransectdensityandtrt.pdf",
+    width=12, height=9)
+for(i in 1:length(gallnames)){
+  print(densplts[[i]])
+}
+dev.off()
+
 
 
 ########
