@@ -54,8 +54,8 @@ gall_data <- dplyr::relocate(gall_data, c(Fire, Graze, Treatment), .after = Past
 gall_data <- dplyr::mutate_at(gall_data, vars(DaisyGall:Greenthorn), ~replace_na(., 0))
 
 # add col for volume of plant
-gall_data <- dplyr::mutate(gall_data, PlantVol_cm3 = Width_cm * Height_cm * Cross_cm * pi/6) 
-gall_data <- dplyr::relocate(gall_data, PlantVol_cm3, .after = Height_cm)
+gall_data <- dplyr::mutate(gall_data, PlantVol_m3 = (Width_cm * Height_cm * Cross_cm * pi/6) / 100)
+gall_data <- dplyr::relocate(gall_data, PlantVol_m3, .after = Height_cm)
 
 # add gall totals
 galls <- dplyr::select(gall_data, c(DaisyGall:Greenthorn))
@@ -63,15 +63,39 @@ gall_data$GallTotal <- rowSums(galls)
 
 # add galls per plant volume
 gall_data <- gall_data %>%
-  dplyr::filter(PlantVol_cm3 != 0) %>% # remove two rows with vol=0
-  dplyr::mutate(GallperVol = GallTotal/PlantVol_cm3) # calculate galls by plant vol
+  dplyr::filter(PlantVol_m3 != 0) %>% # remove two rows with vol=0
+  dplyr::mutate(GallperVol = GallTotal/PlantVol_m3) # calculate galls by plant vol
   
-# add plant density
+# add plant density data
 density_df <- density_df %>%
-  dplyr::select(c(PastureID, Transect, PlantTotal, TransectArea_m2)) %>%
-  dplyr::mutate(Plants_m2 = PlantTotal / TransectArea_m2)
+  dplyr::select(c(PastureID, Transect, PlantTotal, TransectArea)) %>%
+  dplyr::mutate(Plants_m2 = PlantTotal / TransectArea)
 gall_data <- gall_data %>%
   dplyr::left_join(density_df, by = c("PastureID", "Transect"))
+
+# add lpi data
+colnames(lpi_data) <- gsub(" ", "", colnames(lpi_data))
+lpi_data <- lpi_data %>%
+  rename(LPI_point = Point) %>%
+  mutate(Fire = factor(ifelse(PastureID == "1B" | PastureID == "2B" | PastureID == "EX-2B" | PastureID == "EX-1B", "Burn", "NoBurn"), 
+                       levels = c("NoBurn", "Burn")),
+         Graze = factor(ifelse(PastureID == "1B" | PastureID == "2A", "Spring", 
+                               ifelse(PastureID == "1A" | PastureID == "2B", "Fall", "NoGraze")),
+                        levels = c("NoGraze", "Spring", "Fall")),
+         Treatment = factor(paste0(Graze, "_", Fire),  
+                            levels = c("NoGraze_NoBurn", "Spring_NoBurn", "Fall_NoBurn", "NoGraze_Burn", "Spring_Burn", "Fall_Burn")))
+lpi_pivot <- lpi_data %>%
+  pivot_longer(cols = TopLayer,
+               names_to = "Layer", values_to = "Cover") %>%
+  select(!c(LowerLayer1:LowerLayer4)) %>%
+  filter(Cover != is.na(Cover)) %>%
+  mutate(Cover = ifelse(Cover == "PUTR2" | Cover == "ARTR4" | Cover == "TECA2" | Cover == "CHVI" | Cover == "CHVI8", "Shrub",
+                        ifelse(Cover == "M" | Cover== "none" | Cover == "SD", "Other", Cover)))
+
+# get separate df for plant density
+plant_density <- gall_data %>%
+  select(c(Fire, Graze, Transect, PlantVol_m3, PlantTotal, Plants_m2)) %>%
+  distinct()
 
 # check the data again
 str(gall_data)
@@ -81,11 +105,19 @@ gall_long_df <- gall_data %>%
   pivot_longer(cols = c(DaisyGall:Greenthorn),
                names_to = "GallType",
                values_to = "GallCount") %>%
-  mutate(GallCountperVol = GallCount / PlantVol_cm3,
+  mutate(GallCountperVol = GallCount / PlantVol_m3,
          GallPercent = GallCount / GallTotal,
-         GallPercentperVol = GallPercent * PlantVol_cm3,
+         GallPercentperVol = GallPercent * PlantVol_m3,
          GallCount_m2 = GallCount * Plants_m2) %>%
   mutate(across(GallPercent:GallPercentperVol, ~ replace(., is.nan(.), 0)))
+
+# join insect identifiers
+colnames(insect_ids) <- c("GallType", "ScientificName", "Age", "Organ")
+insect_ids <- insect_ids %>%
+  dplyr::mutate(GallType = gsub(" ", "", GallType))
+gall_long_df <- gall_long_df %>%
+  left_join(insect_ids, by = "GallType")
+
 
 
 ########
@@ -110,10 +142,9 @@ gall_binary %>%
   dplyr::mutate(Prop = PlantCount / sum(PlantCount))
 
 gall_presence <- gall_binary %>%
-  dplyr::group_by(Treatment, GallsPresent) %>%
+  dplyr::group_by(Fire, Graze, GallsPresent) %>%
   dplyr::summarize(PlantCount = n()) %>%
-  dplyr::mutate(Prop = round(PlantCount / sum(PlantCount), 3)) %>%
-  dplyr::mutate(GallsPresent = ifelse(GallsPresent ==0, "No", "Yes"))
+  dplyr::mutate(Prop = round(PlantCount / sum(PlantCount), 3))
 
 # Example of making a pretty table. 
 # See kableExtra user guide for more options: https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html
@@ -146,7 +177,7 @@ ggplot(gall_binary, aes(x = GallsPresent, fill = as.factor(Transect))) +
 gall_totals <- gall_data %>% 
   dplyr::group_by(Fire, Graze, Treatment) %>% 
   dplyr::summarize(GallTotal = sum(GallTotal), PlantTotal = n(), 
-                   TotalPlantVol = sum(PlantVol_cm3), MeanPlantVol = mean(PlantVol_cm3), sdPlantVol = sd(PlantVol_cm3),
+                   TotalPlantVol = sum(PlantVol_m3), MeanPlantVol = mean(PlantVol_m3), sdPlantVol = sd(PlantVol_m3),
                    MeanPlantDensity = mean(GallperVol), sdPlantDensity = sd(GallperVol)) %>%
   dplyr::mutate(MeanGallsperPlant = GallTotal / PlantTotal) # calculate galls per plant to account for dif sample sizes
 
@@ -184,9 +215,9 @@ ggplot(gall_data, aes(x = GallTotal, after_stat(density), color = Treatment)) +
 
 ## Do gall totals vary between transects within treatment?
 galltotals_transect <- gall_data %>%
-  dplyr::select(c(Fire, Graze, Treatment, Transect, Transectside, PlantVol_cm3, GallTotal, GallperVol)) %>%
+  dplyr::select(c(Fire, Graze, Treatment, Transect, Transectside, PlantVol_m3, GallTotal, GallperVol)) %>%
   group_by(Treatment, Transect) %>%  # you could add Transectside as a grouping variable to check if transect side is important
-  dplyr::summarise(meanPlantVol = mean(PlantVol_cm3), 
+  dplyr::summarise(meanPlantVol = mean(PlantVol_m3), 
                    meanGalls = mean(GallTotal), 
                    meanGallperVol = mean(GallperVol)) %>%
   dplyr::arrange(Treatment, Transect)
@@ -222,7 +253,7 @@ n_galls <- length(unique(gall_long_df$GallType))
 gall_type_counts <- gall_long_df %>%
   dplyr::group_by(Fire, Graze, GallType) %>%
   dplyr::summarize(TotalCount = sum(GallCount), MeanCount = mean(GallCount), sdCount = sd(GallCount),
-                   TotalDensity = sum(GallCount)/sum(PlantVol_cm3), MeanDensity = mean(GallCountperVol), sdDensity = sd(GallCountperVol),
+                   TotalDensity = sum(GallCount)/sum(PlantVol_m3), MeanDensity = mean(GallCountperVol), sdDensity = sd(GallCountperVol),
                    MeanPercent = mean(GallPercent), sdPercent = sd(GallPercent), 
                    MeanPercentperVol = mean(GallPercentperVol), sdPercentperVol = sd(GallPercentperVol))
 
@@ -351,7 +382,7 @@ ggplot(gall_long_df, aes(x = Treatment, y = GallCount, fill = GallType)) +
 # look at average gall per plant volume by treatments
 gall_data %>%
   group_by(Fire, Graze) %>%
-  filter(PlantVol_cm3 != 0) %>%
+  filter(PlantVol_m3 != 0) %>%
   summarize(avg.gall = mean(GallperVol))
 
 ggplot(gall_data, (aes(x = Fire, y = GallperVol, fill = Graze))) + 
@@ -365,15 +396,15 @@ ggplot(gall_data, (aes(x = Fire, y = GallperVol, fill = Graze))) +
 
 # Are there more galls on larger plants?
 # look at correlation between galltotal and plant volume
-cor(gall_data$PlantVol_cm3, gall_data$GallTotal)
-cor(gall_data$PlantVol_cm3, gall_data$GallTotal, method = "kendall")
-cor(gall_data$PlantVol_cm3, gall_data$GallTotal, method = "spearman")
+cor(gall_data$PlantVol_m3, gall_data$GallTotal)
+cor(gall_data$PlantVol_m3, gall_data$GallTotal, method = "kendall")
+cor(gall_data$PlantVol_m3, gall_data$GallTotal, method = "spearman")
 # seems like there is a moderate positive correlation
 
 # Are galls more dense on larger plants?
-cor(gall_data$GallperVol, gall_data$PlantVol_cm3)
-cor(gall_data$PlantVol_cm3, gall_data$GallperVol, method = "kendall")
-cor(gall_data$PlantVol_cm3, gall_data$GallperVol, method = "spearman")
+cor(gall_data$GallperVol, gall_data$PlantVol_m3)
+cor(gall_data$PlantVol_m3, gall_data$GallperVol, method = "kendall")
+cor(gall_data$PlantVol_m3, gall_data$GallperVol, method = "spearman")
 # no correlation of note
 
 # summary table of galls by plant volume
@@ -382,13 +413,13 @@ gall_data %>%
   
 
 # visualize relationship by Treatment
-ggplot(gall_data, aes(x = PlantVol_cm3, y=GallTotal)) + 
+ggplot(gall_data, aes(x = PlantVol_m3, y=GallTotal)) + 
   geom_point(aes(col = Treatment), size = 3, alpha = 0.6) + 
   theme_minimal() + lims(x = c(0, 300000), y = c(0, 300)) + 
   labs(x = expression("Plant Volume cm"^3), title = "Gall Total by Plant Volume, Treatment")
 
 # visualize relationship by Treatment, Gall Type
-ggplot(gall_long_df, aes(x = PlantVol_cm3, y=GallPercent)) + 
+ggplot(gall_long_df, aes(x = PlantVol_m3, y=GallPercent)) + 
   geom_point(aes(col = Treatment), size = 3, alpha = 0.6) + 
   scale_color_nejm() +
   theme_bw() + lims(x = c(0, 300000), y = c(0.001, 1)) + 
@@ -397,7 +428,7 @@ ggplot(gall_long_df, aes(x = PlantVol_cm3, y=GallPercent)) +
   labs(x = expression("Plant Volume cm"^3), title = "Gall Percentage by Plant Volume, Treatment, Gall Type \n Excludes 0-Counts")
 
 # visualize relationship by Treatment, Gall Type
-ggplot(gall_long_df, aes(x = PlantVol_cm3, y=GallPercent)) + 
+ggplot(gall_long_df, aes(x = PlantVol_m3, y=GallPercent)) + 
   geom_point(aes(col = GallType), size = 3, alpha = 0.6) + 
   scale_color_igv() +
   theme_bw() + lims(x = c(0, 300000), y = c(.001, 1)) + 
@@ -422,9 +453,7 @@ ggplot(gall_long_df, aes(x = Graze, y = GallPercent, fill = GallType)) +
 ########
 
 # Just look at plant density by Treatment
-plant_density <- gall_data %>%
-  select(c(Fire, Graze, Transect, PlantVol_cm3, PlantTotal, Plants_m2)) %>%
-  distinct()
+
 
 ggplot(plant_density, aes(x = Plants_m2, y = PlantTotal)) + 
   geom_point(aes(col = Graze), size = 3, alpha = 0.5) + facet_wrap(vars(Fire)) + 
@@ -433,11 +462,11 @@ ggplot(plant_density, aes(x = Plants_m2, y = PlantTotal)) +
   geom_point(aes(col = Fire), size = 3, alpha = 0.5) + facet_wrap(vars(Graze)) + 
   theme_bw() + ggtitle("Plant Total by Plant Density, Treatment")
 
-ggplot(plant_density, aes(x = Plants_m2, y = PlantVol_cm3)) + 
+ggplot(plant_density, aes(x = Plants_m2, y = PlantVol_m3)) + 
   geom_point(aes(col = Fire), size = 3, alpha = 0.5) + 
   facet_wrap(vars(Graze)) + 
   theme_bw() + ggtitle("Plant Volume by Plant Density, Treatment")
-ggplot(plant_density, aes(x = Plants_m2, y = PlantVol_cm3)) + 
+ggplot(plant_density, aes(x = Plants_m2, y = PlantVol_m3)) + 
   geom_point(aes(col = Graze), size = 3, alpha = 0.5) + 
   facet_wrap(vars(Fire)) + 
   theme_bw() + ggtitle("Plant Volume by Plant Density, Treatment")
@@ -462,6 +491,12 @@ galltype_plant %>%
 ggplot(gall_data, aes(x = Plants_m2, y = GallTotal))+ 
   geom_point(aes(col = Treatment), size = 3, alpha = 0.5) + 
   theme_minimal() + ggtitle("Gall Counts per Plant by Transect Density, Treatment")
+ggplot(gall_data, aes(x = Plants_m2, y = GallperVol))+ 
+  geom_point(aes(col = Treatment), size = 3, alpha = 0.5) + 
+  theme_minimal() + labs(x = expression("Plants m"^2),
+                         "Gall Density per Plant by Transect Density, Treatment")
+
+
 ggplot(gall_data, aes(x = Plants_m2, y = GallTotal))+ 
   geom_point(aes(col = as.factor(Transect)), size = 3, alpha = 0.5) + 
   facet_wrap(vars(Treatment)) + 
@@ -508,18 +543,72 @@ for(i in 1:length(gallnames)){
 dev.off()
 
 
-
 ########
-## -- Modeling Gall Abundance by Treatment, Gall Type
+## -- Final Plots
 ########
 
+# shrub cover by type
+ggplot(lpi_pivot, aes(x = Graze, fill = Cover)) + 
+  geom_bar(position = "fill") + 
+  facet_wrap(vars(Fire)) + 
+  scale_y_continuous(breaks = seq(0, 1, 0.25), labels = scales::percent(seq(0, 1, 0.25))) + 
+  scale_fill_nejm() + theme_bw() + 
+  geom_text(aes(label = scales::percent(..count../tapply(..count.., ..x.. ,sum)[..x..])),
+            position = position_fill(vjust = 0.5),
+            stat = "count", size = 3, fontface = "bold") + 
+  labs(y = "", title = "Cover Percentage by Type, Treatment") +
+  ggsave("./viz/final/shrub_cover_stack_chart.png")
 
-# Estimate gall abundance using a zero-inflated poisson regression model
-mod0 <- pscl::zeroinfl(GallCount ~ Fire * Graze + Plants_m2 + GallType, data = gall_long_df, dist = "poisson")
-mod1 <- pscl::zeroinfl(GallCount ~ Fire * Graze + Plants_m2, data = gall_long_df, dist = "poisson")
-mod2 <- pscl::zeroinfl(GallCount ~ Fire * Graze, data = gall_long_df, dist = "poisson")
+# Plot of Gall density by gall type, treatment
+mature_galls <- gall_long_df %>%
+  filter(Age == "mature")
 
-lmtest(mod2, mod1, mod0)
+# gall density by species
+ggplot(gall_long_df, aes(x = Graze, y = GallPercentperVol, fill = ScientificName)) + 
+  geom_col() + 
+  facet_grid(cols = vars(Fire), scales = "free_x") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust = 1)) +
+  scale_fill_d3(palette = "category20") +
+  labs(x = "Treament", y = expression("Gall Density m"^3), fill = "Gall Species")+ 
+  ggtitle("Gall per Plant Density by Treatment and Gall Type") + 
+  ggsave("./viz/final/galldensity_treatment_galltype_stack_chart.png")
 
-# TODO: plot models on top of empirical data
+# plot of plant volume by plant density, treatment
+ggplot(plant_density, aes(x = Plants_m2, y = PlantVol_m3)) + 
+  geom_point(aes(col = Graze), size = 4, alpha = 0.5) + 
+  facet_wrap(vars(Fire)) + 
+  scale_color_d3() + theme_bw() + 
+  labs(title = "Plant Volume by Plant Density, Treatment",
+       x = expression("Plants per m"^2), y = expression("Plant Volume in m"^3)) + 
+  ggsave("./viz/final/plantvolume_by_plantdensity_dotplot.png")
 
+# plot of gall density by plant density, treatment
+ggplot(mature_galls, aes(x = Plants_m2, y = GallPercentperVol)) + 
+  geom_point(aes(col = Graze), size = 4, alpha = 0.5) + 
+  facet_wrap(vars(Fire)) + 
+  scale_color_d3() + theme_bw() + 
+  labs(title = "Mature Gall Density by Plant Density, Treatment",
+       x = expression("Plants per m"^2), y = expression("Gall Density per m"^3)) + 
+  ggsave("./viz/final/galldensity_plantdensity_dotplot.png")
+
+# gall density by organ
+ggplot(gall_long_df, aes(x = Graze, y = GallPercentperVol, fill = Organ)) + 
+  geom_col() + 
+  facet_grid(cols = vars(Fire), scales = "free_x") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust = 1)) +
+  scale_fill_d3() +
+  labs(x = "Treament", y = expression("Gall Density m"^3), fill = "Organ")+ 
+  ggtitle("Gall per Plant Density by Treatment and Organ") + 
+  ggsave("./viz/final/galldensity_treatment_organ_stack_chart.png")
+
+ggplot(gall_presence, aes(x = Graze, y = PlantCount, fill = GallsPresent)) + 
+  geom_col(position = "dodge") + 
+  facet_wrap(vars(Fire)) + 
+  geom_text(aes(label = scales::percent(Prop)), position = position_dodge(0.9), vjust = -0.5,
+            size = 3, fontface = "bold") + 
+  theme_bw() + scale_fill_startrek() + 
+  labs(x = "Treatment", y = "Plant Count", fill = "Galls Present",
+       title = "Gall Presence by Plant Count, Treatment") + 
+  ggsave("./viz/final/gallpresence_trt_bar_chart.png")
